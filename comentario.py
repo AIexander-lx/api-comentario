@@ -1,6 +1,7 @@
 import boto3
 import uuid
 import os
+import json
 
 def lambda_handler(event, context):
     # Entrada (json)
@@ -8,6 +9,8 @@ def lambda_handler(event, context):
     tenant_id = event['body']['tenant_id']
     texto = event['body']['texto']
     nombre_tabla = os.environ["TABLE_NAME"]
+    nombre_bucket = os.environ["BUCKET_INGESTA"]
+
     # Proceso
     uuidv1 = str(uuid.uuid1())
     comentario = {
@@ -17,13 +20,28 @@ def lambda_handler(event, context):
           'texto': texto
         }
     }
+
+    # 1. Guardar en DynamoDB (tabla del stage)
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(nombre_tabla)
     response = table.put_item(Item=comentario)
+
+    # 2. Ingesta Push: grabar el json del comentario como archivo en el bucket S3 del stage
+    s3 = boto3.client('s3')
+    archivo = f"{tenant_id}/{uuidv1}.json"
+    s3.put_object(
+        Bucket=nombre_bucket,
+        Key=archivo,
+        Body=json.dumps(comentario, ensure_ascii=False),
+        ContentType='application/json'
+    )
+
     # Salida (json)
     print(comentario)
     return {
         'statusCode': 200,
         'comentario': comentario,
+        'bucket_ingesta': nombre_bucket,
+        'archivo_s3': archivo,
         'response': response
     }
